@@ -1,0 +1,16 @@
+{
+  "name": "hodlsat",
+  "version": "1.0.0",
+  "description": "For me only tool to hodl sats.",
+  "main": "index.js",
+  "bin": {
+    "hodlsat": "./index.js"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node index.js"
+  },
+  "keywords": [],
+  "author": "Disco Quotidie",
+  "license": "MIT"
+}
