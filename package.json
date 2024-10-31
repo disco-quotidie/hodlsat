@@ -1,6 +1,6 @@
 {
   "name": "hodlsat",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "For me only tool to hodl sats.",
   "main": "index.js",
   "bin": {
@@ -12,5 +12,16 @@
   },
   "keywords": [],
   "author": "Disco Quotidie",
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "bip32": "^4.0.0",
+    "bip39": "^3.1.0",
+    "bitcoinjs-lib": "^6.1.5",
+    "crypto": "^1.0.1",
+    "ecpair": "^2.1.0",
+    "js-sha256": "^0.11.0",
+    "readline": "^1.3.0",
+    "tiny-secp256k1": "^2.2.3",
+    "yargs": "^17.7.2"
+  }
 }
