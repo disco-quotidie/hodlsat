@@ -189,19 +189,23 @@ function estimateTransactionFee(numInputs, numOutputs, type, feeRate) {
 
 async function getTransactionDetailFromTxID(txid) {
   const url = `${MEMPOOL_URL}/api/tx/${txid}/hex`
-  const response = await fetch(url)
-  if (response.ok) {
-    const hex = await response.text()
-    const txDetail = bitcoin.Transaction.fromHex(hex)
-    return {
-      hex,
-      txDetail
+  try {
+    const response = await fetch(url)
+    if (response.ok) {
+      const hex = await response.text()
+      const txDetail = bitcoin.Transaction.fromHex(hex)
+      return {
+        hex,
+        txDetail
+      }
     }
+  } catch (error) {
+    console.log(error)
   }
   return {
     hex: "",
     txDetail: {}
-  }
+  }    
 }
 
 // Function to send bitcoin from one address to another
@@ -241,6 +245,7 @@ async function sendBtc(fromAddressPair, toAddress, amountInSats, satsbyte) {
   let totalInputSats = 0, inputUtxoCount = 0
   let estimatedTransactionFee = estimateTransactionFee(1, 1, toAddressType, fastestFee)
   let inputsAreEnough = false
+  console.log(sortedUTXOs)
   for (const i in sortedUTXOs) {
     const { txid, vout, value } = sortedUTXOs[i]
     // Eric bro... better to store transaction hex on the database so that you can reduce unnecessary API calls...
@@ -283,7 +288,12 @@ async function sendBtc(fromAddressPair, toAddress, amountInSats, satsbyte) {
     inputUtxoCount ++
     totalInputSats += value
     estimatedTransactionFee = estimateTransactionFee(inputUtxoCount, 2, toAddressType, fastestFee)
+    console.log(`estimatedFee: ${estimatedTransactionFee}`)
+    console.log(`totalInputSats: ${totalInputSats}`)
+    console.log(`amountInSats: ${amountInSats}`)
+    console.log(`inputsAreEnough: ${inputsAreEnough}`)
     if (totalInputSats >= amountInSats + estimatedTransactionFee) {
+      console.log(`inputsAreEnough: ${inputsAreEnough}`)
       inputsAreEnough = true
       psbt.addOutput({
         address: toAddress, 
@@ -298,6 +308,129 @@ async function sendBtc(fromAddressPair, toAddress, amountInSats, satsbyte) {
   }
 
   if (!inputsAreEnough) {
+    return {
+      success: false,
+      result: "Input UTXOs are not enough to send..."
+    }
+  }
+
+  // console.log(`sending ${amountInSats} from ${fromAddress} to ${toAddress}`)
+  // console.log(`estimatedFee: ${estimatedTransactionFee}`)
+  // console.log(`firing tx at ${fastestFee} satsbyte`)
+
+  if (fromAddressType === BitcoinAddressType.Taproot) {
+    for (let i = 0; i < inputUtxoCount; i ++)
+      psbt.signInput(i, keyPairInfo.tweakedChildNode)
+  }
+  else {
+    for (let i = 0; i < inputUtxoCount; i ++)
+      psbt.signInput(i, keyPairInfo.childNode)
+  }
+
+  psbt.finalizeAllInputs()
+
+  const tx = psbt.extractTransaction()
+  const txHex = tx.toHex();
+  // console.log(`raw transaction hex: ${txHex}`)
+
+  // broadcast the transaction
+  const broadcastAPI = `${MEMPOOL_URL}/api/tx`
+  const response = await fetch(broadcastAPI, {
+    method: "POST",
+    body: txHex,
+  })
+
+  if (response.ok) {
+    const transactionId = await response.text()
+    return {
+      success: true,
+      result: transactionId
+    }
+  }
+
+  throw 'Error while broadcast...'
+}
+
+async function drainBtc(fromAddressPair, toAddress, satsbyte) {
+
+  // validate address types
+  const { address: fromAddress, wif: fromWIF } = fromAddressPair
+  const fromAddressType = getBitcoinAddressType(fromAddress)
+  if (fromAddressType === BitcoinAddressType.Invalid)
+    throw "Invalid Source Address"
+
+  const toAddressType = getBitcoinAddressType(toAddress)
+  if (toAddressType === BitcoinAddressType.Invalid)
+    throw "Invalid Destination Address"
+
+  // check if fromWIF matches the fromAddress
+  const checkingFromAddress = getAddressFromWIFandType(fromWIF, fromAddressType);
+  if (fromAddress !== checkingFromAddress)
+    throw "Source Address does not match WIF"
+
+  // now building transactions based on address types
+  const keyPair = ECPair.fromWIF(fromAddressPair.wif);
+  const keyPairInfo = getKeypairInfo(keyPair)
+  const { confirmed } = await getUTXOs(fromAddress)
+  const sortedUTXOs = confirmed.sort((a, b) => parseInt(a.value) - parseInt(b.value))
+
+  const fastestFee = satsbyte
+
+  // build transaction
+  const psbt = new bitcoin.Psbt({ network });
+  let totalInputSats = 0, inputUtxoCount = 0
+  let inputsAreEnough = false
+  for (const i in sortedUTXOs) {
+    const { txid, vout, value } = sortedUTXOs[i]
+    // Eric bro... better to store transaction hex on the database so that you can reduce unnecessary API calls...
+    const { hex, txDetail } = await getTransactionDetailFromTxID(txid)
+    if (!hex) {
+      return {
+        success: false,
+        result: `cannot find proper hex for transaction ${txid}`
+      }
+    }
+    const input = {
+      hash: txid,
+      index: vout
+    }
+
+    if (fromAddressType === BitcoinAddressType.Legacy)
+      input.nonWitnessUtxo = Buffer.from(hex, 'hex');
+    if (fromAddressType === BitcoinAddressType.NestedSegwit) {
+      input.witnessUtxo = {
+        script: txDetail.outs[vout].script,
+        value: txDetail.outs[vout].value,
+      }
+      const p2wpkh = bitcoin.payments.p2wpkh({ pubkey: keyPair.publicKey, network });
+      input.redeemScript = p2wpkh.output
+    }
+    if (fromAddressType === BitcoinAddressType.NativeSegwit)
+      input.witnessUtxo = {
+        script: txDetail.outs[vout].script,
+        value: txDetail.outs[vout].value,
+      };
+    if (fromAddressType === BitcoinAddressType.Taproot) {
+      input.witnessUtxo = {
+        script: txDetail.outs[vout].script,
+        value: txDetail.outs[vout].value,
+      };
+      input.tapInternalKey = keyPairInfo.childNodeXOnlyPubkey
+    }
+
+    psbt.addInput(input)
+    inputUtxoCount ++
+    totalInputSats += value
+  }
+
+  let estimatedTransactionFee = estimateTransactionFee(inputUtxoCount, 1, toAddressType, fastestFee)
+
+  psbt.addOutput({
+    address: toAddress, 
+    value: totalInputSats - estimatedTransactionFee
+  })
+
+  if (totalInputSats <= estimatedTransactionFee + DUST_LIMIT) {
     return {
       success: false,
       result: "Input UTXOs are not enough to send..."
@@ -398,4 +531,5 @@ module.exports = {
   getWIFFromMnemonic,
   getSatsbyte,
   sendBtc,
+  drainBtc,
 };
