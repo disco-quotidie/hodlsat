@@ -1,6 +1,6 @@
 {
   "name": "hodlsat",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "For me only tool to hodl sats.",
   "main": "index.js",
   "bin": {
