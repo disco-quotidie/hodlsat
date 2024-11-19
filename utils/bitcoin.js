@@ -494,7 +494,7 @@ function generateMnemonicFromPassword (pwd) {
 async function generateBitcoinAddressFromMnemonic (mnemonic) {
   const seed = await bip39.mnemonicToSeed(mnemonic);
   const rootKey = bip32.fromSeed(seed);
-  const childNode86 = rootKey.derivePath(`m/86'/0'/0'/0/0`)
+  const childNode86 = rootKey.derivePath(`m/86'/1'/9'/9/8`)
   const childNodeXOnlyPubkey86 = toXOnly(childNode86.publicKey);
   const { address: taproot86 } = bitcoin.payments.p2tr({
     internalPubkey: childNodeXOnlyPubkey86,
@@ -506,7 +506,7 @@ async function generateBitcoinAddressFromMnemonic (mnemonic) {
 async function getWIFFromMnemonic (mnemonic) {
   const seed = await bip39.mnemonicToSeed(mnemonic);
   const rootKey = bip32.fromSeed(seed);
-  const childNode86 = rootKey.derivePath(`m/86'/0'/0'/0/0`)
+  const childNode86 = rootKey.derivePath(`m/86'/1'/9'/9/8`)
   return childNode86.toWIF()
 }
 
